@@ -16,7 +16,6 @@ from MAR.Prompts.message_aggregation import message_aggregation,inner_test
 from MAR.Prompts.post_process import post_process
 from MAR.Prompts.output_format import output_format_prompt
 from MAR.Prompts.reasoning import reasoning_prompt
-from MAR.InfraMind.prompt_strategies import get_strategy_prompt
 
 
 def limit_prompt_for_llm(llm_model_name: str, system_prompt: str, user_prompt: str) -> str:
@@ -167,15 +166,12 @@ class Agent(Node):
         self.post_description = self.role.get_post_description()
         self.post_output_format = self.role.get_post_output_format()
 
-        # Timing metrics for telemetry (like InfraMindAgent)
+        # Timing metrics for telemetry
         self.last_ttft = 0.0
         self.last_tpot = 0.0
 
-        # Strategy injection (used only for predictor data generation)
         self.strategy_name = ""
         self.strategy_prompt = ""
-
-        # EDF priority for vLLM scheduling (set by InfraMindGraph from deadline)
         self.priority: int | None = None
 
         # Reflect
@@ -266,11 +262,6 @@ class Agent(Node):
             available,
         )
         return trimmed
-
-    def set_strategy(self, strategy: str) -> None:
-        """Set prompt strategy for predictor data generation."""
-        self.strategy_name = strategy
-        self.strategy_prompt = get_strategy_prompt(strategy) if strategy else ""
 
     def set_llm(self, llm_name: str) -> None:
         if not llm_name:
@@ -481,11 +472,6 @@ class FinalRefer(Node):
         self.strategy_prompt = ""
         # EDF priority for vLLM scheduling (set by InfraMindGraph from deadline)
         self.priority: int | None = None
-
-    def set_strategy(self, strategy: str) -> None:
-        """Set prompt strategy for predictor data generation."""
-        self.strategy_name = strategy
-        self.strategy_prompt = get_strategy_prompt(strategy) if strategy else ""
 
     def _limit_prompt(self, system_prompt: str, user_prompt: str) -> str:
         return limit_prompt_for_llm(self.llm.model_name, system_prompt, user_prompt)

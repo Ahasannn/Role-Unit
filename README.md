@@ -1,290 +1,116 @@
-# INFRAMIND: Infrastructure-Aware Multi-Agent Orchestration
+# Role-Unit
 
-**INFRAMIND** is a system-aware routing framework for multi-agent systems (MAS) that dynamically orchestrates LLM collaboration based on real-time infrastructure metrics and resource constraints.
+**Role-Unit** benchmarks whether LLMs are fit for specific functional roles in multi-agent systems, using the MMLU dataset.
 
-## 🎯 Overview
+## What it does
 
-Traditional LLM routing approaches focus solely on task characteristics, ignoring the underlying infrastructure state. **INFRAMIND** introduces infrastructure-awareness into multi-agent orchestration, using a hierarchical Constrained Markov Decision Process (CMDP) to balance accuracy, latency, and cost under dynamic system loads.
+Run MMLU multiple-choice questions through a fixed sequential pipeline of LLM roles:
 
-### Key Contributions
+```
+Question → KnowledgeExpert → Reflector → Critic → Historian
+         → WikiSearcher → Scientist → Economist → FinalNode → Answer (A/B/C/D)
+```
 
-- **System-Aware Routing**: Real-time monitoring of vLLM metrics (queue depth, KV cache usage, latency) to inform routing decisions
-- **Hierarchical CMDP Architecture**: Two-level decision making with Planner (topology + role selection) and Executor (LLM + strategy routing)
-- **Load-Adaptive Orchestration**: Dynamic adjustment of agent collaboration patterns based on infrastructure state
-- **Comprehensive Evaluation**: Tested across 5 datasets (MATH, MBPP, GSM8K, HumanEval, MMLU) under various load conditions
+Each role is assigned a specific LLM (any OpenAI-compatible model). The FinalNode aggregates all role outputs and selects the final answer. Results are saved as CSV with per-question accuracy.
 
-## 🏗️ Architecture
-
-INFRAMIND consists of two main components:
-
-1. **InfraMind** (`MAR/InfraMind/`): Hierarchical CMDP-based routing with infrastructure monitoring
-2. **Multi-Agent Graph Framework** (`MAR/Graph/`): Flexible execution engine for collaborative LLM reasoning
-
-### InfraMind
-
-- **Planner**: Selects collaboration topology and role set at query arrival (t=0)
-- **Executor**: Dynamically routes (LLM, strategy) per role during execution based on:
-  - Query embeddings
-  - Role embeddings
-  - Remaining budget
-  - System metrics (queue depth, cache usage, latency predictions)
-
-### Infrastructure Monitoring
-
-Real-time metrics collection from vLLM endpoints:
-- Queue depth (running + waiting requests)
-- KV cache usage
-- Time-to-first-token (TTFT)
-- Inter-token latency (ITL)
-- End-to-end latency
-
-## 🚀 Quick Start
-
-### Environment Setup
+## Setup
 
 ```bash
-# Create virtual environment (Python 3.11 recommended)
 uv venv --python 3.11
 source .venv/bin/activate
 uv sync --frozen
-
-# Optional: For local vLLM serving
-uv sync --frozen --extra serve
+cp template.env .env
+# Edit .env: set URL and KEY for your LLM backend
 ```
 
-### Configuration
-
-1. **API Keys**: Copy `template.env` to `.env` and add your API keys
-   ```bash
-   URL=""  # LLM backend URL
-   KEY=""  # API key
-   ```
-
-2. **Orange Storage** (HPC): Configure paths in `scripts/setup_hpc_env.sh`
-   ```bash
-   export ORANGE_STORAGE="/orange/qi855292.ucf/ah872032.ucf"
-   export HF_HOME="${ORANGE_STORAGE}/huggingface_cache"
-   ```
-
-### Datasets
-
-Download and organize datasets in the `Datasets/` directory:
-
-```
-Datasets/
-├── MATH/
-│   ├── test/
-│   └── train/
-├── MBPP/
-├── gsm8k/
-├── humaneval/
-└── MMLU/data/
-```
-
-Most datasets auto-download from HuggingFace on first use.
-
-### Local vLLM Model Pool
-
-Start a local pool of 5 vLLM servers on different ports:
+## Running
 
 ```bash
-# Start all models (ports 8001-8005)
-bash scripts/vllm/serve_full_pool.sh
+# Run with defaults (config/mmlu_config.yaml, test split, all questions)
+python run.py
 
-# Check health status
-bash scripts/check_vllm_status.sh
+# Limit to 100 questions from the dev split
+python run.py --limit 100 --split dev
 
-# Stop all models
-bash scripts/vllm/stop_pool.sh
+# Custom config
+python run.py --config config/mmlu_config.yaml
+
+# Save to specific CSV
+python run.py --output results/my_run.csv
 ```
 
-Model pool includes:
-- Qwen2.5-Coder-7B-Instruct (port 8001)
-- Qwen2.5-32B-Instruct (port 8002)
-- Qwen2.5-3B-Instruct (port 8003)
-- Qwen2.5-0.5B-Instruct (port 8004)
-- Qwen2.5-1.5B-Instruct (port 8005)
+## Configuration
 
-## 🧪 Running Experiments
+Edit `config/mmlu_config.yaml` to assign different LLMs to roles:
 
-### InfraMind Training
+```yaml
+roles:
+  - role: KnowledgeExpert
+    llm: gpt-4o-mini
+  - role: Reflector
+    llm: gpt-4o        # stronger model for reflection
+  - role: Critic
+    llm: gpt-4o-mini
+  # ...
 
-Train the infrastructure-aware router on each dataset:
-
-```bash
-# MBPP dataset
-python Experiments/train_inframind_mbpp.py
-
-# GSM8K dataset
-python Experiments/train_inframind_gsm8k.py --dataset-path Datasets/gsm8k/gsm8k.jsonl
-
-# MATH dataset
-python Experiments/train_inframind_math.py --dataset-root Datasets/MATH
-
-# MMLU dataset
-python Experiments/train_inframind_mmlu.py --dataset-root Datasets/MMLU/data
-
-# HumanEval dataset
-python Experiments/train_inframind_humaneval.py --dataset-path Datasets/humaneval/humaneval-py.jsonl
+final_node:
+  llm: gpt-4o
+  prompt_file: MAR/Roles/FinalNode/mmlu.json
 ```
 
-### Baseline MAS Router Training (Comparison)
+Topology options: `Chain`, `FullConnected`, `Debate`.
 
-For comparison, train the baseline MAS Router without infrastructure awareness:
+## Roles
 
-```bash
-# Using SLURM (recommended for HPC)
-sbatch scripts/baseline_train/submit_mas_train_mbpp.slurm
-sbatch scripts/baseline_train/submit_mas_train_gsm8k.slurm
-sbatch scripts/baseline_train/submit_mas_train_math.slurm
-sbatch scripts/baseline_train/submit_mas_train_humaneval.slurm
-sbatch scripts/baseline_train/submit_mas_train_mmlu.slurm
+Role definitions live in `MAR/Roles/Commonsense/`:
 
-# Or run directly
-python Experiments/run_mbpp.py --epochs 2 --batch_size 32 --lr 0.01
-```
+| Role | Description |
+|------|-------------|
+| `KnowledgeExpert` | Broad knowledge QA |
+| `Reflector` | Reflects on previous answers |
+| `Critic` | Finds errors in reasoning |
+| `Historian` | Historical context |
+| `WikiSearcher` | Wikipedia keyword search |
+| `Scientist` | Scientific reasoning |
+| `Economist` | Economic reasoning |
 
-### Arrival Rate Sweeps (Load Testing)
+## Output
 
-Test routers under various arrival rates (requests per minute):
+Results saved to `results/mmlu_<timestamp>.csv`:
 
-```bash
-# InfraMind
-sbatch scripts/motivation_plot_generator_data/submit_baseline_mas_test_arrival_sweep_mbpp.slurm
+| Column | Description |
+|--------|-------------|
+| `item_id` | Question index |
+| `question` | Question text (truncated) |
+| `gold` | Ground truth answer (A/B/C/D) |
+| `pred` | Predicted answer |
+| `correct` | 1 if correct, 0 otherwise |
+| `latency_sec` | Wall-clock time for pipeline |
+| `roles` | Role names (JSON list) |
+| `llms` | LLM names (JSON list) |
 
-# Sweeps test at: 2, 5, 100, 200, 300 req/min with Poisson arrival pattern
-```
-
-Results are saved to `logs/motivation_plot_generator_data/`.
-
-### Generating Plots
-
-```bash
-# Generate motivation plots from sweep results
-python visualization/generate_motivation_plots.py
-
-# Or use Jupyter notebook
-jupyter notebook visualization/motivation_plots.ipynb
-```
-
-## 📊 Project Structure
+## Structure
 
 ```
-.
-├── MAR/                            # Core framework
-│   ├── InfraMind/                 # Infrastructure-aware routing (INFRAMIND)
-│   │   ├── inframind_router.py   # Hierarchical CMDP implementation
-│   │   ├── metrics_watcher.py    # Real-time vLLM metrics collection
-│   │   └── training.py           # CMDP training loop
-│   ├── MasRouter/                # Baseline MAS Router
-│   ├── Graph/                    # Multi-agent execution framework
-│   ├── Agent/                    # Base agent implementation
-│   ├── LLM/                      # LLM interface layer
-│   ├── Roles/                    # Domain-specific agent roles
-│   └── Prompts/                  # Prompt templates
-│
-├── Experiments/                   # Training and evaluation scripts
-│   ├── train_inframind_*.py  # System-aware router training
-│   └── run_*.py                  # Baseline MAS Router training
-│
-├── Datasets/                      # Dataset loaders
-│   ├── math_dataset.py
-│   ├── mbpp_dataset.py
-│   ├── gsm8k_dataset.py
-│   ├── humaneval_dataset.py
-│   └── mmlu_dataset.py
-│
-├── scripts/                       # Utility scripts
-│   ├── baseline_train/           # SLURM training jobs
-│   ├── motivation_plot_generator_data/  # Load testing scripts
-│   ├── vllm/                     # vLLM server management
-│   └── setup_hpc_env.sh          # HPC environment setup
-│
-└── visualization/                 # Plotting and analysis
-    ├── generate_motivation_plots.py
-    └── motivation_plots.ipynb
+role-unit/
+├── config/
+│   └── mmlu_config.yaml      # Pipeline configuration
+├── Datasets/
+│   └── mmlu_dataset.py       # MMLU loader (auto-downloads from HuggingFace)
+├── MAR/
+│   ├── Agent/                # Agent and FinalRefer implementations
+│   ├── Graph/                # Graph execution engine
+│   ├── LLM/                  # OpenAI-compatible LLM wrappers
+│   ├── Prompts/              # Prompt utilities
+│   ├── Roles/
+│   │   ├── Commonsense/      # 7 MMLU role JSON definitions
+│   │   └── FinalNode/        # mmlu.json aggregator prompt
+│   └── Utils/                # Logging, cost tracking
+├── results/                  # CSV output
+└── run.py                    # Main entry point
 ```
 
-## 📈 Key Features
+## MMLU Data
 
-### 1. Infrastructure Monitoring
-
-Real-time collection of system metrics from vLLM endpoints:
-- Automatically polls `/metrics` endpoint
-- Tracks per-model queue depths and latencies
-- Maintains sliding window of historical metrics
-
-### 2. Constrained MDP Formulation
-
-**State Space**:
-- Query embedding (768-dim)
-- Role embedding (768-dim)
-- Remaining budget (scalar)
-- System metrics vector (queue depth, cache usage, latency predictions)
-
-**Action Space**:
-- LLM selection (5 models)
-- Prompting strategy (Flash, Concise, DeepThink)
-
-**Reward**:
-- Accuracy (task-specific correctness)
-- Cost penalty (token usage × model pricing)
-- Latency penalty (infrastructure-aware)
-
-### 3. Hierarchical Decision Making
-
-- **Planner** (t=0): Selects topology (single-agent CoT, debate, hierarchical) and roles
-- **Executor** (runtime): Dynamically assigns LLM+strategy per role based on current system state
-
-### 4. Load-Adaptive Behavior
-
-Under high load:
-- Prefers smaller, faster models
-- Uses concise prompting strategies
-- Reduces agent collaboration complexity
-
-Under low load:
-- Leverages larger models for accuracy
-- Uses deeper reasoning strategies
-- Enables richer multi-agent collaboration
-
-## 🎓 Academic Use
-
-This repository is designed for research and academic use. When using INFRAMIND in your research, please:
-
-1. Cite the original MAS Router baseline (see Acknowledgments)
-2. Reference our work (citation details will be added upon publication)
-3. Follow the Apache 2.0 license terms
-
-## 🙏 Acknowledgments
-
-This work builds upon the **MAS Router** framework as a baseline:
-
-```bibtex
-@misc{yue2025masrouter,
-  title={MasRouter: Learning to Route LLMs for Multi-Agent Systems},
-  author={Yanwei Yue and Guibin Zhang and Boyang Liu and Guancheng Wan and Kun Wang and Dawei Cheng and Yiyan Qi},
-  year={2025},
-  eprint={2502.11133},
-  archivePrefix={arXiv},
-  primaryClass={cs.LG},
-  url={https://arxiv.org/abs/2502.11133}
-}
-```
-
-We also thank the following projects for their contributions:
-- [MapCoder](https://github.com/Md-Ashraful-Pramanik/MapCoder) - Multi-agent code generation
-- [GPTSwarm](https://github.com/metauto-ai/GPTSwarm) - Agent orchestration patterns
-- [vLLM](https://github.com/vllm-project/vllm) - Efficient LLM serving
-
-## 📝 Citation
-
-Citation information will be added upon publication.
-
-## 📄 License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
----
-
-**Note**: This is a research prototype. For production use, additional hardening and optimization may be required.
+Place MMLU CSV files under `Datasets/MMLU/data/{split}/` (e.g., `Datasets/MMLU/data/test/*.csv`).
+The dataset auto-downloads from HuggingFace on first use if not present locally.

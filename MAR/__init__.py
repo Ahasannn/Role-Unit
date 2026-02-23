@@ -1,2 +1,2 @@
-"""MasRouter package root."""
+"""Role-Unit MAR package root."""
 

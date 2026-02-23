@@ -2,7 +2,6 @@ import shortuuid
 from typing import Any, List, Optional, Dict, Tuple
 from abc import ABC
 import time
-import numpy as np
 import torch
 import asyncio
 from loguru import logger
@@ -11,11 +10,7 @@ from MAR.Graph.node import Node
 from MAR.Utils.telemetry import GraphTrace, NodeTiming, utc_now_iso, LLMUsageTracker
 from MAR.Utils.utils import find_mode
 from MAR.Agent.agent_registry import AgentRegistry
-from MAR.InfraMind.metrics_watcher import model_metrics
-from MAR.InfraMind.prompt_strategies import PromptStrategy
 from MAR.LLM.gpt_chat import _is_non_retryable_server_error
-
-_STRATEGY_CHOICES = [s.value for s in PromptStrategy]
 
 class Graph(ABC):
     """
@@ -83,8 +78,6 @@ class Graph(ABC):
         self.potential_temporal_edges:List[List[str,str]] = []
         self.node_kwargs = node_kwargs if node_kwargs is not None else [{} for _ in agent_names]
         self.reasoning_name = reasoning_name
-        self.inject_random_strategies = kwargs.get("inject_random_strategies", False)
-        self._strategy_rng = np.random.default_rng(42) if self.inject_random_strategies else None
 
         self.init_nodes() # add nodes to the self.nodes
         self.init_potential_edges() # add potential edges to the self.potential_spatial/temporal_edges
@@ -330,32 +323,12 @@ class Graph(ABC):
 
                 def run_node(node_id: str) -> None:
                     node = self.nodes[node_id]
-
-                    # Inject random prompt strategy for predictor data generation
-                    if self.inject_random_strategies and hasattr(node, "set_strategy"):
-                        strategy = self._strategy_rng.choice(_STRATEGY_CHOICES)
-                        node.set_strategy(strategy)
-
                     ts_start = utc_now_iso()
                     start_perf = time.perf_counter()
                     usage_key = f"{self.id}:{round}:{node_id}"
                     context_token = usage_tracker.set_context(usage_key)
                     usage_tracker.clear(usage_key)
                     usage = {"cost": 0.0, "prompt_tokens": 0.0, "completion_tokens": 0.0}
-
-                    # Capture vLLM metrics snapshot before execution
-                    pre_llm_name = _safe_llm_name(node)
-                    snap = model_metrics.get(pre_llm_name, {})
-                    transition = transitions.get((round, node_id))
-                    if transition is not None:
-                        transition["llm_running"] = snap.get("num_requests_running", 0)
-                        transition["llm_waiting"] = snap.get("num_requests_waiting", 0)
-                        transition["llm_kv_cache_usage"] = snap.get("kv_cache_usage_perc", 0.0)
-                        transition["llm_ttft_avg"] = snap.get("ttft_avg", 0.0)
-                        transition["llm_itl_avg"] = snap.get("itl_avg", 0.0)
-                        transition["llm_e2e_avg"] = snap.get("e2e_avg", 0.0)
-                        transition["llm_queue_avg"] = snap.get("queue_avg", 0.0)
-                        transition["llm_inference_avg"] = snap.get("inference_avg", 0.0)
 
                     tries = 0
                     success = False
@@ -476,10 +449,6 @@ class Graph(ABC):
                 self.update_memory()
 
             self.connect_decision_node()
-            # Inject random strategy for decision node too
-            if self.inject_random_strategies and hasattr(self.decision_node, "set_strategy"):
-                strategy = self._strategy_rng.choice(_STRATEGY_CHOICES)
-                self.decision_node.set_strategy(strategy)
             ts_start = utc_now_iso()
             start_perf = time.perf_counter()
             decision_node_id = getattr(self.decision_node, "id", "")

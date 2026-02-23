@@ -1,0 +1,41 @@
+# Role-Unit MMLU Benchmark Configuration
+
+# Dataset
+dataset:
+  split: "test"           # dev | val | test
+  data_root: null         # null = auto-detect Datasets/MMLU/data/
+  limit: 0                # 0 = all; N = stratified sample of N questions
+
+# Pipeline topology
+pipeline:
+  topology: "Chain"       # Chain | FullConnected | Debate
+  num_rounds: 1           # debate rounds (1 = single pass)
+  domain: "Commonsense"   # role JSON folder name
+
+# Role → LLM assignments
+# Each entry is {role: <role_name>, llm: <model_name>}
+# Roles execute in order; FinalNode aggregates their outputs.
+roles:
+  - role: KnowledgeExpert
+    llm: gpt-4o-mini
+  - role: Reflector
+    llm: gpt-4o-mini
+  - role: Critic
+    llm: gpt-4o-mini
+  - role: Historian
+    llm: gpt-4o-mini
+  - role: WikiSearcher
+    llm: gpt-4o-mini
+  - role: Scientist
+    llm: gpt-4o-mini
+  - role: Economist
+    llm: gpt-4o-mini
+
+final_node:
+  llm: gpt-4o-mini
+  prompt_file: MAR/Roles/FinalNode/mmlu.json
+
+# Results
+results:
+  output_dir: results/
+  csv_file: null          # null = auto-generated timestamped filename
