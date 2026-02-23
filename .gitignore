@@ -1,0 +1,26 @@
+docx/
+logs/
+Datasets/MATH/*
+Datasets/MMLU/*
+register/
+
+.env
+.venv/
+.python-version.local
+*.jsonl
+*.pth
+*.pyc
+*.csv
+*.pptx
+*.zip
+settings.json
+*.claudecore.*
+
+# Python build artifacts
+*.egg-info/
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+.claude/.nfs00000002339d2c3300000139
