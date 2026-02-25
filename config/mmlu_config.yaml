@@ -16,15 +16,7 @@ pipeline:
 # Each entry is {role: <role_name>, llm: <model_name>}
 # Roles execute in order; FinalNode aggregates their outputs.
 roles:
-  - role: KnowledgeExpert
-    llm: gpt-4o-mini
-  - role: Reflector
-    llm: gpt-4o-mini
-  - role: Critic
-    llm: gpt-4o-mini
   - role: Historian
-    llm: gpt-4o-mini
-  - role: WikiSearcher
     llm: gpt-4o-mini
   - role: Scientist
     llm: gpt-4o-mini

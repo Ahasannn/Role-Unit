@@ -82,11 +82,11 @@ def _get_test_config() -> Dict[str, Any]:
 
     If `MODEL_BASE_URLS` is not set, we look for:
     - `<repo>/config_test.json`
-    - `<repo>/MAR/LLM/llm_profile_full.json`
+    - `<repo>/config/llm_profile_full.json`
     """
     candidates = [
         _project_root() / "config_test.json",
-        _project_root() / "MAR" / "LLM" / "llm_profile_full.json",
+        _project_root() / "config" / "llm_profile_full.json",
     ]
 
     for path in candidates:
@@ -237,6 +237,32 @@ def _is_timeout_error(exc: BaseException) -> bool:
     return "timeout" in message or "timed out" in message
 
 
+def _merge_system_into_user(messages: List[Dict]) -> List[Dict]:
+    """Merge system messages into the first user message for models that
+    don't support the system role (e.g. Gemma)."""
+    system_parts = []
+    other = []
+    for msg in messages:
+        if msg['role'] == 'system':
+            system_parts.append(msg['content'])
+        else:
+            other.append(msg)
+    if not system_parts:
+        return messages
+    prefix = "\n\n".join(system_parts)
+    if other and other[0]['role'] == 'user':
+        other[0] = {**other[0], 'content': prefix + "\n\n" + other[0]['content']}
+    else:
+        other.insert(0, {'role': 'user', 'content': prefix})
+    return other
+
+
+def _needs_system_merge(exc: BaseException) -> bool:
+    """Check if an exception indicates the model doesn't support system role."""
+    msg = str(exc).lower()
+    return "system role not supported" in msg
+
+
 def _is_non_retryable_server_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     for pattern in ("cuda error", "cuda out of memory", "cublas_status_alloc_failed",
@@ -291,16 +317,21 @@ class ALLChat(LLM):
                 n=num_comps,
             )
         except Exception as exc:
-            print(f"[DEBUG] Exception in LLM call for model: {self.model_name}")
-            print(f"[DEBUG] Base URL: {_resolve_base_url(self.model_name) if hasattr(self, 'model_name') else 'N/A'}")
-            print(f"[DEBUG] API Key set: {'Yes' if _resolve_api_key() else 'No'}")
-            print(f"[DEBUG] Exception type: {type(exc).__name__}")
-            print(f"[DEBUG] Exception message: {str(exc)}")
-            if _is_non_retryable_server_error(exc):
+            if _needs_system_merge(exc):
+                messages = _merge_system_into_user(messages)
+                chat_completion = client.chat.completions.create(
+                    messages=messages,
+                    model=self.model_name,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    n=num_comps,
+                )
+            else:
+                if _is_non_retryable_server_error(exc):
+                    raise
+                if _is_timeout_error(exc):
+                    raise TimeoutError("LLM request timed out") from exc
                 raise
-            if _is_timeout_error(exc):
-                raise TimeoutError("LLM request timed out") from exc
-            raise
         response = chat_completion.choices[0].message.content
         prompt = "".join([item['content'] for item in messages])
         cost_count(prompt, response, self.model_name)
@@ -343,14 +374,18 @@ class ALLChat(LLM):
                 temperature=temperature,
             )
         except Exception as exc:
-            print(f"[DEBUG] Exception in LLM call for model: {self.model_name}")
-            print(f"[DEBUG] Base URL: {_resolve_base_url(self.model_name) if hasattr(self, 'model_name') else 'N/A'}")
-            print(f"[DEBUG] API Key set: {'Yes' if _resolve_api_key() else 'No'}")
-            print(f"[DEBUG] Exception type: {type(exc).__name__}")
-            print(f"[DEBUG] Exception message: {str(exc)}")
-            if _is_timeout_error(exc):
-                raise TimeoutError("LLM request timed out") from exc
-            raise
+            if _needs_system_merge(exc):
+                messages = _merge_system_into_user(messages)
+                chat_completion = await client.chat.completions.create(
+                    messages=messages,
+                    model=self.model_name,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            else:
+                if _is_timeout_error(exc):
+                    raise TimeoutError("LLM request timed out") from exc
+                raise
         finally:
             if client is not None:
                 try:
@@ -360,7 +395,7 @@ class ALLChat(LLM):
         response = chat_completion.choices[0].message.content
 
         return response
-    
+
 
 @LLMRegistry.register('Deepseek')
 class DSChat(LLM):

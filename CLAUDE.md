@@ -6,7 +6,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 **Role-Unit** is a benchmark that tests whether LLMs are fit for specific functional roles in multi-agent systems, using the MMLU dataset.
 
-MMLU questions run through a fixed chain of LLM roles (KnowledgeExpert, Reflector, Critic, Historian, WikiSearcher, Scientist, Economist) followed by a FinalNode that aggregates outputs. Accuracy is measured per-question. There is NO routing/training — role→LLM assignments are fixed in config.
+MMLU questions run through a fixed chain of 3 domain LLM roles (Historian, Scientist, Economist) followed by a FinalNode that aggregates outputs. Accuracy is measured per-question. There is NO routing/training — role→LLM assignments are fixed in config.
 
 ## Build & Environment Setup
 
@@ -51,7 +51,7 @@ MMLU loader with stratified sampling. Loads from `Datasets/MMLU/data/{split}/`.
 **MAR/LLM/**
 - `gpt_chat.py`: OpenAI-compatible LLM clients (`ALLChat`, `DSChat`, `GroqChat`, `OpenRouterChat`)
 - `llm_registry.py`: LLM instance cache
-- `llm_profile_full.py` + `llm_profile_full.json`: Model context length / token limits
+- `llm_profile_full.py`: Model context length / token limits (reads `config/llm_profile_full.json`)
 - `price.py`: Token counting and cost tracking
 
 **MAR/Roles/**

@@ -1,0 +1,32 @@
+# MMLU Subject → Domain Role Mapping
+# Only tightly domain-specific subjects — no generalist noise.
+# Used for both unit testing (per-role) and baseline evaluation (combined).
+
+Historian:
+  - high_school_european_history
+  - high_school_us_history
+  - high_school_world_history
+  - prehistory
+  - world_religions
+  - high_school_geography
+  - high_school_government_and_politics
+  - us_foreign_policy
+
+Scientist:
+  - astronomy
+  - anatomy
+  - college_biology
+  - college_chemistry
+  - college_physics
+  - conceptual_physics
+  - high_school_biology
+  - high_school_chemistry
+  - high_school_physics
+  - virology
+  - medical_genetics
+
+Economist:
+  - econometrics
+  - high_school_macroeconomics
+  - high_school_microeconomics
+  - professional_accounting

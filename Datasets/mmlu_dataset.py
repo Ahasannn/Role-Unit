@@ -12,12 +12,13 @@ class MMLUDataset(ABC):
         split: Union[Literal['dev'], Literal['val'], Literal['test']],
         data_root: Optional[str] = None,
         stratified_limit: int = 0,
+        subjects: Optional[List[str]] = None,
         ) -> None:
 
         self._split = split
 
         data_path = self._resolve_data_path(self._split, data_root)
-        self._total_df: pd.DataFrame = self._load_data(data_path, stratified_limit)
+        self._total_df: pd.DataFrame = self._load_data(data_path, stratified_limit, subjects)
 
     @staticmethod
     def get_domain() -> str:
@@ -44,13 +45,24 @@ class MMLUDataset(ABC):
     def _load_data(
         data_path: str,
         stratified_limit: int = 0,
+        subjects: Optional[List[str]] = None,
         ) -> pd.DataFrame:
 
         rng = np.random.default_rng(888)
 
         csv_paths = glob.glob(data_path + "*.csv")
         csv_paths = sorted(csv_paths)
-        print("Number of topics: ", len(csv_paths))
+
+        # Filter to specific subjects if provided
+        if subjects:
+            subject_set = set(subjects)
+            csv_paths = [
+                p for p in csv_paths
+                if os.path.basename(p).replace('.csv', '') in subject_set
+            ]
+            print(f"Filtered to {len(csv_paths)} subjects (from {len(subject_set)} requested)")
+        else:
+            print("Number of topics: ", len(csv_paths))
 
         names = ['question', 'A', 'B', 'C', 'D', 'correct_answer']
 

@@ -1,0 +1,41 @@
+Role Unit Test Results
+============================================================
+Job ID: 25614578
+Timestamp: 2026-02-24 17:26:18
+Split: validation
+Models: 6
+Roles: ['Historian', 'Scientist', 'Economist']
+Total questions: 477
+Total tasks: 2862
+Concurrency: 32
+Total time: 173.1s
+Throughput: 16.5 q/s
+Total cost (OpenRouter equiv): $0.052868
+
+Accuracy Matrix:
+role                                       Economist  Historian  Scientist   mean
+model                                                                            
+Qwen/Qwen2.5-7B-Instruct                      0.7143     0.8333     0.6387 0.7288
+Qwen/Qwen2.5-Coder-14B-Instruct               0.7321     0.8333     0.6230 0.7295
+google/gemma-2-9b-it                          0.8304     0.8506     0.6702 0.7837
+meta-llama/Llama-3.1-8B-Instruct              0.5714     0.8046     0.6597 0.6786
+meta-llama/Llama-3.2-3B-Instruct              0.4732     0.7644     0.5602 0.5993
+mistralai/Mistral-Small-24B-Instruct-2501     0.8661     0.9023     0.8168 0.8617
+
+Cost Matrix (USD):
+role                                       Economist  Historian  Scientist    total
+model                                                                              
+Qwen/Qwen2.5-7B-Instruct                    0.001029   0.002153   0.006580 0.009762
+Qwen/Qwen2.5-Coder-14B-Instruct             0.001123   0.002139   0.007418 0.010680
+google/gemma-2-9b-it                        0.000855   0.001667   0.005449 0.007971
+meta-llama/Llama-3.1-8B-Instruct            0.000881   0.001426   0.003935 0.006242
+meta-llama/Llama-3.2-3B-Instruct            0.000602   0.001098   0.001932 0.003632
+mistralai/Mistral-Small-24B-Instruct-2501   0.002884   0.004978   0.006717 0.014579
+
+Per-model summary:
+  Qwen/Qwen2.5-7B-Instruct: accuracy=0.7288, cost=$0.009762
+  Qwen/Qwen2.5-Coder-14B-Instruct: accuracy=0.7295, cost=$0.010680
+  google/gemma-2-9b-it: accuracy=0.7837, cost=$0.007971
+  meta-llama/Llama-3.1-8B-Instruct: accuracy=0.6786, cost=$0.006242
+  meta-llama/Llama-3.2-3B-Instruct: accuracy=0.5993, cost=$0.003632
+  mistralai/Mistral-Small-24B-Instruct-2501: accuracy=0.8617, cost=$0.014579

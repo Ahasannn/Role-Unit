@@ -317,7 +317,11 @@ class Agent(Node):
             stream = _create_stream(messages, max_tokens)
         except Exception as exc:
             err = str(exc).lower()
-            if "max_tokens must be at least 1" in err or "context length" in err:
+            if "system role not supported" in err:
+                from MAR.LLM.gpt_chat import _merge_system_into_user
+                messages = _merge_system_into_user(messages)
+                stream = _create_stream(messages, max_tokens)
+            elif "max_tokens must be at least 1" in err or "context length" in err:
                 messages, max_tokens, _ = fit_messages_to_context(
                     self.llm.model_name,
                     messages,
@@ -522,7 +526,11 @@ class FinalRefer(Node):
             stream = _create_stream(messages, max_tokens)
         except Exception as exc:
             err = str(exc).lower()
-            if "max_tokens must be at least 1" in err or "context length" in err:
+            if "system role not supported" in err:
+                from MAR.LLM.gpt_chat import _merge_system_into_user
+                messages = _merge_system_into_user(messages)
+                stream = _create_stream(messages, max_tokens)
+            elif "max_tokens must be at least 1" in err or "context length" in err:
                 messages, max_tokens, _ = fit_messages_to_context(
                     self.llm.model_name,
                     messages,

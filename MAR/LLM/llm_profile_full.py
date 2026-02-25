@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
-_PROFILE_PATH = Path(__file__).with_suffix(".json")
+_PROFILE_PATH = Path(__file__).resolve().parents[2] / "config" / "llm_profile_full.json"
 _PROFILE_DATA = {}
 if _PROFILE_PATH.is_file():
     try:
