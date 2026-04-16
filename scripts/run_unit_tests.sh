@@ -61,7 +61,6 @@ mkdir -p logs/test/role-unit "${OUTPUT_DIR}"
 export KEY="EMPTY"
 export TOKENIZERS_PARALLELISM="false"
 
-# --- Deploy models (unless --no-deploy) ---
 if [[ "$NO_DEPLOY" == "false" ]]; then
     # Cleanup function
     cleanup_vllm() {
@@ -110,7 +109,6 @@ else
     echo ""
 fi
 
-# --- Run unit tests on VALIDATION split ---
 echo "========================================="
 echo "Running unit tests on VALIDATION split..."
 echo "Concurrency: ${CONCURRENCY}"

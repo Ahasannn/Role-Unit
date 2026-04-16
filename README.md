@@ -1,116 +1,114 @@
 # Role-Unit
 
-**Role-Unit** benchmarks whether LLMs are fit for specific functional roles in multi-agent systems, using the MMLU dataset.
+A training-free framework for assigning LLMs to roles in multi-agent systems. Instead of training a router, Role-Unit measures each model's fitness on each role's domain, then solves the assignment as an Integer Linear Program (Multiple-Choice Knapsack Problem) to find accuracy-cost tradeoffs.
 
-## What it does
+**How it works:**
+1. Run every candidate model on every role's domain-specific questions (fitness testing)
+2. Build a fitness matrix (accuracy) and cost matrix (inference cost)
+3. Solve the ILP at different budget levels to get a Pareto frontier of assignments
 
-Run MMLU multiple-choice questions through a fixed sequential pipeline of LLM roles:
+No gradient training. Adding a new model = one validation pass + sub-second re-solve.
 
-```
-Question → KnowledgeExpert → Reflector → Critic → Historian
-         → WikiSearcher → Scientist → Economist → FinalNode → Answer (A/B/C/D)
-```
+## Results
 
-Each role is assigned a specific LLM (any OpenAI-compatible model). The FinalNode aggregates all role outputs and selects the final answer. Results are saved as CSV with per-question accuracy.
+Evaluated on MMLU with 6 open-weight models (3B to 24B parameters) across 3 domain roles and compared against learned routers:
+
+| Method | Accuracy | Training Cost |
+|--------|----------|---------------|
+| CARROT | 75.5% | $0.042 |
+| GraphRouter | 76.6% | $42.13 |
+| RouteLLM | 78.7% | $4.21 |
+| **Role-Unit P7** | 77.7% | **$0.042** |
+| **Role-Unit P10** | **78.7%** | **$0.042** |
+
+Role-Unit P10 matches the best learned router at 100x lower training cost. P7 is one point behind but cuts inference cost by 35%.
 
 ## Setup
+
+Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv venv --python 3.11
 source .venv/bin/activate
 uv sync --frozen
+
 cp template.env .env
-# Edit .env: set URL and KEY for your LLM backend
+# Edit .env: set URL and KEY for your OpenAI-compatible LLM backend
 ```
+
+MMLU data goes under `Datasets/MMLU/data/{split}/` (e.g., `Datasets/MMLU/data/test/*.csv`).
 
 ## Running
 
+**Run the multi-agent pipeline** with a fixed role-to-LLM assignment:
+
 ```bash
-# Run with defaults (config/mmlu_config.yaml, test split, all questions)
-python run.py
+python run.py                                      # defaults from config/mmlu_config.yaml
+python run.py --limit 100 --split dev              # quick test
+python run.py --output results/my_run.csv          # custom output path
+```
 
-# Limit to 100 questions from the dev split
-python run.py --limit 100 --split dev
+**Run baselines** (homogeneous and random assignments):
 
-# Custom config
-python run.py --config config/mmlu_config.yaml
+```bash
+python run_baseline.py --mode both --split test --limit 500 --concurrency 64
+python run_baseline.py --mode homogeneous --split test --limit 500
+python run_baseline.py --mode random --n-trials 10 --split test --limit 500
+```
 
-# Save to specific CSV
-python run.py --output results/my_run.csv
+**Run unit tests** (per-role fitness evaluation):
+
+```bash
+python unit_tests/run_unit_tests.py
+```
+
+**Generate plots:**
+
+```bash
+python visualization/plot_results.py
 ```
 
 ## Configuration
 
-Edit `config/mmlu_config.yaml` to assign different LLMs to roles:
+`config/mmlu_config.yaml` controls the pipeline:
 
 ```yaml
 roles:
-  - role: KnowledgeExpert
+  - role: Historian
     llm: gpt-4o-mini
-  - role: Reflector
-    llm: gpt-4o        # stronger model for reflection
-  - role: Critic
+  - role: Scientist
     llm: gpt-4o-mini
-  # ...
+  - role: Economist
+    llm: gpt-4o-mini
 
 final_node:
-  llm: gpt-4o
+  llm: gpt-4o-mini
   prompt_file: MAR/Roles/FinalNode/mmlu.json
 ```
 
-Topology options: `Chain`, `FullConnected`, `Debate`.
+`config/role_subjects.yaml` maps MMLU subjects to domain roles (Historian, Scientist, Economist).
 
-## Roles
-
-Role definitions live in `MAR/Roles/Commonsense/`:
-
-| Role | Description |
-|------|-------------|
-| `KnowledgeExpert` | Broad knowledge QA |
-| `Reflector` | Reflects on previous answers |
-| `Critic` | Finds errors in reasoning |
-| `Historian` | Historical context |
-| `WikiSearcher` | Wikipedia keyword search |
-| `Scientist` | Scientific reasoning |
-| `Economist` | Economic reasoning |
-
-## Output
-
-Results saved to `results/mmlu_<timestamp>.csv`:
-
-| Column | Description |
-|--------|-------------|
-| `item_id` | Question index |
-| `question` | Question text (truncated) |
-| `gold` | Ground truth answer (A/B/C/D) |
-| `pred` | Predicted answer |
-| `correct` | 1 if correct, 0 otherwise |
-| `latency_sec` | Wall-clock time for pipeline |
-| `roles` | Role names (JSON list) |
-| `llms` | LLM names (JSON list) |
-
-## Structure
+## Project Structure
 
 ```
-role-unit/
+Role-Unit/
+├── run.py                  # Main pipeline entry point
+├── run_baseline.py         # Homogeneous & random baseline runner
 ├── config/
-│   └── mmlu_config.yaml      # Pipeline configuration
+│   ├── mmlu_config.yaml    # Pipeline config (role→LLM assignments)
+│   ├── role_subjects.yaml  # MMLU subject→role mapping
+│   ├── llm_profile_full.json  # Model pool config (vLLM serving)
+│   └── model_costs.json    # Token pricing
 ├── Datasets/
-│   └── mmlu_dataset.py       # MMLU loader (auto-downloads from HuggingFace)
+│   └── mmlu_dataset.py     # MMLU data loader
 ├── MAR/
-│   ├── Agent/                # Agent and FinalRefer implementations
-│   ├── Graph/                # Graph execution engine
-│   ├── LLM/                  # OpenAI-compatible LLM wrappers
-│   ├── Prompts/              # Prompt utilities
-│   ├── Roles/
-│   │   ├── Commonsense/      # 7 MMLU role JSON definitions
-│   │   └── FinalNode/        # mmlu.json aggregator prompt
-│   └── Utils/                # Logging, cost tracking
-├── results/                  # CSV output
-└── run.py                    # Main entry point
+│   ├── Agent/              # Agent + FinalRefer (aggregator)
+│   ├── Graph/              # Graph execution engine
+│   ├── LLM/                # OpenAI-compatible LLM clients
+│   ├── Prompts/            # Prompt construction utilities
+│   ├── Roles/              # Role definitions (JSON)
+│   └── Utils/              # Logging, cost tracking, telemetry
+├── unit_tests/             # Per-role fitness evaluation
+├── visualization/          # Result plotting
+└── scripts/                # SLURM job scripts (HPC)
 ```
-
-## MMLU Data
-
-Place MMLU CSV files under `Datasets/MMLU/data/{split}/` (e.g., `Datasets/MMLU/data/test/*.csv`).
-The dataset auto-downloads from HuggingFace on first use if not present locally.

@@ -26,7 +26,6 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-# Style
 plt.rcParams.update({
     "figure.dpi": 150,
     "savefig.dpi": 300,
@@ -56,7 +55,6 @@ def short_name(model: str) -> str:
 
 
 def _build_val_lookups(val_df):
-    """Build common lookups from val_df."""
     fitness_lookup = {(row["model"], row["role"]): row["accuracy"]
                       for _, row in val_df.iterrows()}
     cost_lookup = {(row["model"], row["role"]): row["cost_usd"]
@@ -71,12 +69,10 @@ def _build_val_lookups(val_df):
 
 
 def plot_pareto_frontier(pareto_df, val_df, baseline_df, output_dir):
-    """Plot 1: Pareto frontier with baselines overlaid."""
     fig, ax = plt.subplots(figsize=(10, 7))
 
     fitness_lookup, cost_lookup, roles, models, role_weights, total_w = _build_val_lookups(val_df)
 
-    # --- Pareto frontier ---
     pareto_costs = pareto_df["val_cost_usd"].values * USD_TO_CENTS
     pareto_accs = pareto_df["val_accuracy"].values * 100
 
@@ -84,7 +80,6 @@ def plot_pareto_frontier(pareto_df, val_df, baseline_df, output_dir):
             label="ILP-Optimal (Pareto)", zorder=5, color="#2563EB")
     ax.fill_between(pareto_costs, pareto_accs, alpha=0.08, color="#2563EB")
 
-    # Annotate key Pareto points
     for i, row in pareto_df.iterrows():
         assignment = json.loads(row["assignment"])
         models_used = set(assignment.values())
@@ -95,7 +90,6 @@ def plot_pareto_frontier(pareto_df, val_df, baseline_df, output_dir):
                         textcoords="offset points", xytext=(8, -12),
                         fontsize=7, color="#1E40AF", style="italic")
 
-    # --- Homogeneous baselines ---
     homo_colors = sns.color_palette("Set2", len(models))
     for idx, model in enumerate(models):
         model_data = val_df[val_df["model"] == model]
@@ -105,7 +99,6 @@ def plot_pareto_frontier(pareto_df, val_df, baseline_df, output_dir):
         ax.scatter(cost, acc, s=120, marker="s", color=homo_colors[idx],
                    edgecolor="black", linewidth=0.8, zorder=4, label=f"Homo: {sname}")
 
-    # --- Baseline test results (if provided) ---
     if baseline_df is not None:
         random_trials = baseline_df[baseline_df["trial"].str.startswith("random_")]
         if not random_trials.empty:
@@ -117,7 +110,6 @@ def plot_pareto_frontier(pareto_df, val_df, baseline_df, output_dir):
                        color="#DC2626", edgecolor="black", linewidth=1, zorder=4,
                        label=f"Random mean ({rand_accs.mean():.1f}%)")
 
-    # --- All 216 assignments (gray cloud) ---
     from itertools import product
     all_accs_rand = []
     all_costs_rand = []
@@ -145,7 +137,6 @@ def plot_pareto_frontier(pareto_df, val_df, baseline_df, output_dir):
 
 
 def plot_fitness_heatmap(val_df, output_dir):
-    """Plot 2: Fitness heatmap — model x role accuracy matrix."""
     pivot = val_df.pivot(index="model", columns="role", values="accuracy")
     pivot.index = [short_name(m) for m in pivot.index]
 
@@ -176,7 +167,6 @@ def plot_fitness_heatmap(val_df, output_dir):
 
 
 def plot_cost_heatmap(val_df, output_dir):
-    """Plot 3: Cost heatmap — model x role cost matrix in cents."""
     pivot = val_df.pivot(index="model", columns="role", values="cost_usd")
     pivot.index = [short_name(m) for m in pivot.index]
     pivot = pivot * USD_TO_CENTS  # convert to cents
@@ -211,12 +201,10 @@ def plot_cost_heatmap(val_df, output_dir):
 
 
 def plot_strategy_comparison(pareto_df, val_df, baseline_df, output_dir):
-    """Plot 4: Bar chart comparing key strategies."""
     fitness_lookup, cost_lookup, roles, models, role_weights, total_w = _build_val_lookups(val_df)
 
     rows = []
 
-    # Key Pareto points
     if len(pareto_df) >= 3:
         mid = len(pareto_df) // 2
         key_pareto = [
@@ -232,7 +220,6 @@ def plot_strategy_comparison(pareto_df, val_df, baseline_df, output_dir):
         rows.append({"Strategy": label, "Accuracy": row["val_accuracy"] * 100,
                       "Cost": row["val_cost_usd"] * USD_TO_CENTS, "type": "ilp"})
 
-    # Homogeneous baselines
     for model in models:
         acc = sum(role_weights[r] / total_w * fitness_lookup.get((model, r), 0)
                   for r in roles) * 100
@@ -240,7 +227,6 @@ def plot_strategy_comparison(pareto_df, val_df, baseline_df, output_dir):
         rows.append({"Strategy": f"Homo: {short_name(model)}", "Accuracy": acc,
                       "Cost": cost, "type": "homo"})
 
-    # Random baseline from test
     if baseline_df is not None:
         random_trials = baseline_df[baseline_df["trial"].str.startswith("random_")]
         if not random_trials.empty:
@@ -264,7 +250,6 @@ def plot_strategy_comparison(pareto_df, val_df, baseline_df, output_dir):
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Accuracy bars
     bars1 = ax1.barh(df["Strategy"], df["Accuracy"], color=colors, edgecolor="white")
     ax1.set_xlabel("Accuracy (%)")
     ax1.set_title("Accuracy Comparison", fontweight="bold")
@@ -273,7 +258,6 @@ def plot_strategy_comparison(pareto_df, val_df, baseline_df, output_dir):
         ax1.text(bar.get_width() + 0.3, bar.get_y() + bar.get_height() / 2,
                  f"{val:.1f}%", va="center", fontsize=9)
 
-    # Cost bars
     bars2 = ax2.barh(df["Strategy"], df["Cost"], color=colors, edgecolor="white")
     ax2.set_xlabel("Cost (cents)")
     ax2.set_title("Cost Comparison", fontweight="bold")
@@ -292,7 +276,6 @@ def plot_strategy_comparison(pareto_df, val_df, baseline_df, output_dir):
 
 
 def plot_pareto_savings(pareto_df, output_dir):
-    """Plot 5: Cost savings vs accuracy tradeoff along Pareto frontier."""
     if len(pareto_df) < 2:
         return
 
@@ -309,7 +292,6 @@ def plot_pareto_savings(pareto_df, output_dir):
         ax.annotate(f"P{i}", (a, s), textcoords="offset points",
                     xytext=(0, 10), ha="center", fontsize=8, color="#1E40AF")
 
-    # Highlight best efficiency point
     ratios = pareto_df["val_accuracy"] / pareto_df["val_cost_usd"]
     best_eff_idx = ratios.idxmax()
     ax.scatter(accs[best_eff_idx], savings[best_eff_idx], s=200, marker="*",

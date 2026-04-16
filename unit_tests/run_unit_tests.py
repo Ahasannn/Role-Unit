@@ -32,10 +32,6 @@ import pandas as pd
 import yaml
 from openai import OpenAI
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LLM_PROFILE = PROJECT_ROOT / "config" / "llm_profile_full.json"
 DEFAULT_ROLE_SUBJECTS = PROJECT_ROOT / "config" / "role_subjects.yaml"
@@ -45,10 +41,8 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "unit_tests" / "results"
 
 MMLU_COLUMNS = ["question", "A", "B", "C", "D", "correct_answer"]
 
-# Roles directory for loading role JSON files
 ROLES_DIR = PROJECT_ROOT / "MAR" / "Roles" / "Commonsense"
 
-# Output format prompt for "Answer" (from MAR/Prompts/output_format.py)
 ANSWER_FORMAT_PROMPT = (
     "The last line of your output must contain only the final result "
     "without any units or redundant explanation,"
@@ -60,12 +54,7 @@ ANSWER_FORMAT_PROMPT = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
 def load_role_subjects(path: Path = DEFAULT_ROLE_SUBJECTS) -> Dict[str, List[str]]:
-    """Load role -> subject mapping from YAML."""
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
@@ -75,7 +64,6 @@ def load_subject_questions(
     subjects: List[str],
     data_root: Path = DEFAULT_DATA_ROOT,
 ) -> pd.DataFrame:
-    """Load MMLU questions for a list of subjects."""
     data_path = data_root / split
     dfs = []
     for subject in subjects:
@@ -92,12 +80,6 @@ def load_subject_questions(
 
 
 def load_llm_profile(path: Path) -> Tuple[List[Dict], Dict[str, str]]:
-    """Load model list and base_urls from llm_profile_full.json.
-
-    Returns:
-        models: list of model dicts (Name, vllm_config, etc.)
-        base_urls: dict of model_name -> base_url
-    """
     with open(path, "r") as f:
         data = json.load(f)
     models = data.get("models", [])
@@ -106,7 +88,6 @@ def load_llm_profile(path: Path) -> Tuple[List[Dict], Dict[str, str]]:
 
 
 def load_role_system_prompt(role: str) -> str:
-    """Load role description from JSON and combine with Answer output format."""
     role_json_path = ROLES_DIR / f"{role}.json"
     with open(role_json_path, "r") as f:
         role_data = json.load(f)
@@ -115,21 +96,12 @@ def load_role_system_prompt(role: str) -> str:
 
 
 def load_model_costs(path: Path = DEFAULT_MODEL_COSTS) -> Dict[str, Dict[str, float]]:
-    """Load per-model token costs from JSON.
-
-    Returns dict: model_name -> {"input_per_million": float, "output_per_million": float}
-    """
     with open(path, "r") as f:
         data = json.load(f)
     return data.get("models", {})
 
 
-# ---------------------------------------------------------------------------
-# LLM interaction
-# ---------------------------------------------------------------------------
-
 def format_question(row: pd.Series) -> str:
-    """Format an MMLU row into a question string."""
     return (
         f"{row['question']}\n"
         f"A: {row['A']}\n"
@@ -140,18 +112,14 @@ def format_question(row: pd.Series) -> str:
 
 
 def extract_answer(response: str) -> str:
-    """Extract A/B/C/D from model response."""
-    # Try boxed format first: \boxed{A}
     boxed = re.findall(r"\\boxed\{([A-Da-d])\}", response)
     if boxed:
         return boxed[-1].upper()
 
-    # Try "answer is X" pattern
     ans_match = re.search(r"answer is[:\s]*([A-Da-d])", response, re.IGNORECASE)
     if ans_match:
         return ans_match.group(1).upper()
 
-    # Fallback: last standalone A/B/C/D
     last_match = re.findall(r"\b([A-D])\b", response)
     if last_match:
         return last_match[-1]
@@ -167,11 +135,6 @@ def query_model(
     max_tokens: int = 512,
     temperature: float = 0.0,
 ) -> Tuple[str, int, int]:
-    """Send a question to the model and return (response_text, input_tokens, output_tokens).
-
-    Falls back to prepending system prompt into user message if the model
-    doesn't support the system role (e.g. Gemma).
-    """
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": question},
@@ -191,7 +154,6 @@ def query_model(
         )
     except Exception as e:
         if "System role not supported" in str(e):
-            # Fold system prompt into user message
             messages = [
                 {"role": "user", "content": f"{system_prompt}\n\n{question}"},
             ]
@@ -215,10 +177,6 @@ def query_model(
         return "", 0, 0
 
 
-# ---------------------------------------------------------------------------
-# Single question task (for thread pool)
-# ---------------------------------------------------------------------------
-
 def process_question(
     client: OpenAI,
     model: str,
@@ -228,7 +186,6 @@ def process_question(
     max_tokens: int,
     temperature: float,
 ) -> Dict:
-    """Process a single (model, role, question) triple. Thread-safe."""
     question_text = format_question(row)
     response_text, input_tokens, output_tokens = query_model(
         client, model, system_prompt, question_text, max_tokens, temperature
@@ -247,10 +204,6 @@ def process_question(
         "output_tokens": output_tokens,
     }
 
-
-# ---------------------------------------------------------------------------
-# Main runner
-# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Role Unit Test Runner — Parallel All-Model")
@@ -276,7 +229,6 @@ def main():
                         help="Path to model_costs.json")
     args = parser.parse_args()
 
-    # --- Load configs ---
     models, base_urls = load_llm_profile(Path(args.llm_profile))
     model_costs = load_model_costs(Path(args.model_costs))
     role_subjects = load_role_subjects(Path(args.role_subjects))
@@ -288,7 +240,6 @@ def main():
     print(f"Split: {args.split} | Concurrency: {args.concurrency}")
     print()
 
-    # --- Setup output directory ---
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
@@ -296,7 +247,6 @@ def main():
         output_dir = DEFAULT_OUTPUT_DIR / f"job_{job_id}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Create one OpenAI client per model ---
     clients: Dict[str, OpenAI] = {}
     for model_name in model_names:
         url = base_urls.get(model_name)
@@ -305,13 +255,11 @@ def main():
             continue
         clients[model_name] = OpenAI(base_url=url, api_key="EMPTY")
 
-    # --- Load role system prompts ---
     role_prompts: Dict[str, str] = {}
     for role in roles_to_test:
         role_prompts[role] = load_role_system_prompt(role)
         print(f"Loaded system prompt for {role} ({len(role_prompts[role])} chars)")
 
-    # --- Load questions per role ---
     role_questions: Dict[str, pd.DataFrame] = {}
     for role in roles_to_test:
         subjects = role_subjects.get(role, [])
@@ -330,7 +278,6 @@ def main():
     print(f"Total tasks: {total_tasks} ({len(clients)} models x {total_questions} questions)")
     print()
 
-    # --- Submit all (model, role, question) tasks ---
     all_details: List[Dict] = []
     start_time = time.time()
     completed = 0
@@ -363,7 +310,6 @@ def main():
     total_elapsed = time.time() - start_time
     print(f"\nAll tasks complete: {completed} in {total_elapsed:.1f}s ({completed/total_elapsed:.1f} q/s)")
 
-    # --- Compute cost per detail row ---
     details_df = pd.DataFrame(all_details)
 
     def compute_cost(row):
@@ -374,7 +320,6 @@ def main():
 
     details_df["cost_usd"] = details_df.apply(compute_cost, axis=1)
 
-    # --- Compute score matrix ---
     score_rows = []
     for model_name in model_names:
         if model_name not in clients:
@@ -403,32 +348,22 @@ def main():
 
     score_df = pd.DataFrame(score_rows)
 
-    # --- Print score matrix ---
-    print(f"\n{'='*90}")
-    print("SCORE MATRIX")
-    print(f"{'='*90}")
+    print(f"\nSCORE MATRIX")
     print(f"{'Model':<45} {'Role':<12} {'Correct':>8} {'Total':>8} {'Accuracy':>10} {'Cost($)':>10}")
     print("-" * 90)
     for _, row in score_df.iterrows():
         print(f"{row['model']:<45} {row['role']:<12} {row['correct']:>8} {row['total']:>8} {row['accuracy']:>10.4f} {row['cost_usd']:>10.6f}")
 
-    # --- Print pivot table ---
-    print(f"\n{'='*90}")
-    print("PIVOT: Model (rows) x Role (columns) = Accuracy")
-    print(f"{'='*90}")
+    print(f"\nACCURACY PIVOT")
     pivot = score_df.pivot(index="model", columns="role", values="accuracy")
     pivot["mean"] = pivot.mean(axis=1)
     print(pivot.to_string(float_format="%.4f"))
 
-    # Cost pivot
-    print(f"\n{'='*90}")
-    print("COST: Model (rows) x Role (columns) = USD")
-    print(f"{'='*90}")
+    print(f"\nCOST PIVOT (USD)")
     cost_pivot = score_df.pivot(index="model", columns="role", values="cost_usd")
     cost_pivot["total"] = cost_pivot.sum(axis=1)
     print(cost_pivot.to_string(float_format="%.6f"))
 
-    # --- Save outputs ---
     score_path = output_dir / "score_matrix.csv"
     score_df.to_csv(score_path, index=False)
     print(f"\nScore matrix saved to: {score_path}")
@@ -437,7 +372,6 @@ def main():
     details_df.to_csv(details_path, index=False)
     print(f"Details saved to: {details_path}")
 
-    # Run config CSV — captures full metadata for reproducibility
     config_path = output_dir / "run_config.csv"
     job_id = os.environ.get("SLURM_JOB_ID", "local")
     config_rows = [{
@@ -459,7 +393,6 @@ def main():
     pd.DataFrame(config_rows).to_csv(config_path, index=False)
     print(f"Run config saved to: {config_path}")
 
-    # Summary text
     total_cost = float(details_df["cost_usd"].sum())
     summary_path = output_dir / "summary.txt"
     with open(summary_path, "w") as f:

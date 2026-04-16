@@ -33,10 +33,6 @@ import pandas as pd
 import yaml
 from openai import OpenAI
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_LLM_PROFILE = PROJECT_ROOT / "config" / "llm_profile_full.json"
 DEFAULT_ROLE_SUBJECTS = PROJECT_ROOT / "config" / "role_subjects.yaml"
@@ -45,10 +41,8 @@ DEFAULT_DATA_ROOT = PROJECT_ROOT / "Datasets" / "MMLU" / "data"
 
 MMLU_COLUMNS = ["question", "A", "B", "C", "D", "correct_answer"]
 
-# Roles directory for loading role JSON files
 ROLES_DIR = PROJECT_ROOT / "MAR" / "Roles" / "Commonsense"
 
-# Output format prompt for "Answer" (from MAR/Prompts/output_format.py)
 ANSWER_FORMAT_PROMPT = (
     "The last line of your output must contain only the final result "
     "without any units or redundant explanation,"
@@ -62,12 +56,7 @@ ANSWER_FORMAT_PROMPT = (
 ROLES = ["Historian", "Scientist", "Economist"]
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
 def load_role_subjects(path: Path = DEFAULT_ROLE_SUBJECTS) -> Dict[str, List[str]]:
-    """Load role -> subject mapping from YAML."""
     with open(path) as f:
         return yaml.safe_load(f)
 
@@ -75,7 +64,6 @@ def load_role_subjects(path: Path = DEFAULT_ROLE_SUBJECTS) -> Dict[str, List[str
 def load_subject_questions(
     split: str, subjects: List[str], data_root: Path = DEFAULT_DATA_ROOT,
 ) -> pd.DataFrame:
-    """Load MMLU questions for a list of subjects."""
     data_path = data_root / split
     dfs = []
     for subject in subjects:
@@ -92,14 +80,12 @@ def load_subject_questions(
 
 
 def load_llm_profile(path: Path) -> Tuple[List[Dict], Dict[str, str]]:
-    """Load model list and base_urls from llm_profile_full.json."""
     with open(path) as f:
         data = json.load(f)
     return data.get("models", []), data.get("model_base_urls", {})
 
 
 def load_role_system_prompt(role: str) -> str:
-    """Load role description from JSON and combine with Answer output format."""
     role_json_path = ROLES_DIR / f"{role}.json"
     with open(role_json_path) as f:
         role_data = json.load(f)
@@ -107,14 +93,12 @@ def load_role_system_prompt(role: str) -> str:
 
 
 def load_model_costs(path: Path = DEFAULT_MODEL_COSTS) -> Dict[str, Dict[str, float]]:
-    """Load per-model token costs from JSON."""
     with open(path) as f:
         data = json.load(f)
     return data.get("models", {})
 
 
 def build_subject_to_role(role_subjects: Dict[str, List[str]]) -> Dict[str, str]:
-    """Invert role_subjects mapping: subject -> role."""
     mapping = {}
     for role, subjects in role_subjects.items():
         for subject in subjects:
@@ -122,12 +106,7 @@ def build_subject_to_role(role_subjects: Dict[str, List[str]]) -> Dict[str, str]
     return mapping
 
 
-# ---------------------------------------------------------------------------
-# LLM interaction
-# ---------------------------------------------------------------------------
-
 def format_question(row: pd.Series) -> str:
-    """Format an MMLU row into a question string."""
     return (
         f"{row['question']}\n"
         f"A: {row['A']}\n"
@@ -138,7 +117,6 @@ def format_question(row: pd.Series) -> str:
 
 
 def extract_answer(response: str) -> str:
-    """Extract A/B/C/D from model response."""
     if not response:
         return ""
     boxed = re.findall(r"\\boxed\{([A-Da-d])\}", response)
@@ -157,11 +135,6 @@ def query_model(
     client: OpenAI, model: str, system_prompt: str, question: str,
     max_tokens: int = 512, temperature: float = 0.0,
 ) -> Tuple[str, int, int]:
-    """Send a question to the model and return (response_text, input_tokens, output_tokens).
-
-    Falls back to folding system prompt into user message if model
-    doesn't support the system role (e.g. Gemma).
-    """
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": question},
@@ -200,23 +173,17 @@ def query_model(
 
 def compute_cost(model_name: str, input_tokens: int, output_tokens: int,
                  model_costs: Dict[str, Dict[str, float]]) -> float:
-    """Compute USD cost for a single LLM call."""
     costs = model_costs.get(model_name, {})
     input_rate = costs.get("input_per_million", 0.0)
     output_rate = costs.get("output_per_million", 0.0)
     return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000
 
 
-# ---------------------------------------------------------------------------
-# Single question runner
-# ---------------------------------------------------------------------------
-
 def run_one_question(
     client: OpenAI, model: str, role: str, system_prompt: str,
     row: pd.Series, max_tokens: int, temperature: float,
     model_costs: Dict[str, Dict[str, float]],
 ) -> Dict:
-    """Run a single question through one model with role prompt. Thread-safe."""
     question_text = format_question(row)
     start = time.perf_counter()
     response_text, input_tokens, output_tokens = query_model(
@@ -242,10 +209,6 @@ def run_one_question(
     }
 
 
-# ---------------------------------------------------------------------------
-# Trial runner
-# ---------------------------------------------------------------------------
-
 def run_trial(
     assignment: Dict[str, str],
     clients: Dict[str, OpenAI],
@@ -258,11 +221,6 @@ def run_trial(
     temperature: float,
     model_costs: Dict[str, Dict[str, float]],
 ) -> Dict:
-    """Run all questions through a role->model assignment.
-
-    Args:
-        assignment: {role: model_name} mapping
-    """
     assignment_str = ", ".join(
         f"{role}={model.split('/')[-1]}" for role, model in assignment.items()
     )
@@ -303,7 +261,6 @@ def run_trial(
         for future in as_completed(futures):
             on_result(future.result())
 
-    # Write per-trial CSV sorted by subject then question
     all_rows.sort(key=lambda r: (r["role"], r["subject"], r["question"]))
     fieldnames = [
         "role", "model", "subject", "question", "gold", "pred", "correct",
@@ -333,10 +290,6 @@ def run_trial(
     }
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main():
     parser = argparse.ArgumentParser(description="Single-agent baseline with random/homogeneous assignments")
     parser.add_argument("--mode", choices=["random", "homogeneous", "both"], default="both")
@@ -353,7 +306,6 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.0)
     args = parser.parse_args()
 
-    # Setup
     job_id = os.environ.get("SLURM_JOB_ID", time.strftime("%Y%m%d_%H%M%S"))
     output_dir = Path(args.output_dir) / f"job_{job_id}"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -369,7 +321,6 @@ def main():
     print(f"Split: {args.split} | Limit: {args.limit} | Concurrency: {args.concurrency}")
     print(f"Mode: {args.mode} | Random trials: {args.n_trials}")
 
-    # Create one OpenAI client per model
     clients: Dict[str, OpenAI] = {}
     for name in model_names:
         url = base_urls.get(name)
@@ -378,18 +329,15 @@ def main():
             continue
         clients[name] = OpenAI(base_url=url, api_key="EMPTY")
 
-    # Load role system prompts
     role_prompts: Dict[str, str] = {}
     for role in ROLES:
         role_prompts[role] = load_role_system_prompt(role)
 
-    # Load questions per role with stratified sampling
     all_subjects = []
     for subs in role_subjects.values():
         all_subjects.extend(subs)
     all_subjects = sorted(set(all_subjects))
 
-    # Load all questions, then stratified sample
     role_questions: Dict[str, pd.DataFrame] = {}
     for role in ROLES:
         subjects = role_subjects.get(role, [])
@@ -400,14 +348,11 @@ def main():
     total_full = sum(len(df) for df in role_questions.values())
     print(f"Total questions (full): {total_full}")
 
-    # Stratified sampling across all roles
     if args.limit > 0 and total_full > args.limit:
-        # Sample proportionally from each role
         ratio = args.limit / total_full
         for role in ROLES:
             df = role_questions[role]
             n_sample = max(1, int(len(df) * ratio))
-            # Stratify within role by subject
             sampled = df.groupby("subject", group_keys=False).apply(
                 lambda x: x.sample(n=max(1, int(len(x) * ratio)), random_state=42)
             ).reset_index(drop=True)
@@ -420,7 +365,6 @@ def main():
 
     all_results = []
 
-    # --- Homogeneous baselines ---
     if args.mode in ("homogeneous", "both"):
         print("=" * 70)
         print("HOMOGENEOUS BASELINES")
@@ -444,7 +388,6 @@ def main():
             )
             all_results.append(result)
 
-    # --- Random assignments ---
     if args.mode in ("random", "both"):
         print()
         print("=" * 70)
@@ -468,7 +411,6 @@ def main():
             )
             all_results.append(result)
 
-    # --- Summary ---
     print()
     print("=" * 70)
     print("SUMMARY")

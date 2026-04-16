@@ -46,9 +46,6 @@ LLM_PROFILE_JSON="${ROOT_DIR}/config/llm_profile_full.json"
 VLLM_HOST="0.0.0.0"
 VLLM_ENTRYPOINT=("${VLLM_PYTHON}" -m vllm.entrypoints.openai.api_server)
 
-# ---------------------------------------------------------------------------
-# JSON helpers
-# ---------------------------------------------------------------------------
 get_model_count() {
     "${VLLM_PYTHON}" -c "
 import json; data = json.load(open('${LLM_PROFILE_JSON}'))
@@ -76,9 +73,6 @@ print(data.get('global_settings', {}).get('default_max_model_len', 4096))
 "
 }
 
-# ---------------------------------------------------------------------------
-# Crash detection — check vLLM logs for fatal initialization errors
-# ---------------------------------------------------------------------------
 detect_startup_failure() {
     local logfile="$1"
 
@@ -93,9 +87,6 @@ detect_startup_failure() {
     return 1  # No crash detected
 }
 
-# ---------------------------------------------------------------------------
-# Health check with crash detection (from system-aware-mas)
-# ---------------------------------------------------------------------------
 wait_for_health() {
     local name="$1" port="$2"
     local pidfile="${LOG_DIR}/${name}.pid"
@@ -131,9 +122,6 @@ wait_for_health() {
     done
 }
 
-# ---------------------------------------------------------------------------
-# Start a single model server
-# ---------------------------------------------------------------------------
 start_server() {
     local index="$1"
     local model_name=$(get_model_field "$index" "Name")
@@ -154,7 +142,6 @@ start_server() {
     local logfile="${LOG_DIR}/${server_name}.log"
     local pidfile="${LOG_DIR}/${server_name}.pid"
 
-    # Skip if already running
     if [[ -f "${pidfile}" ]] && kill -0 "$(cat "${pidfile}")" 2>/dev/null; then
         echo "[vLLM] ${server_name} already running (pid $(cat "${pidfile}"))"
         return 0
@@ -201,9 +188,6 @@ start_server() {
     echo "[vLLM] ${server_name} pid $! (log: ${logfile})"
 }
 
-# ---------------------------------------------------------------------------
-# Main: Start all models SEQUENTIALLY with retry logic
-# ---------------------------------------------------------------------------
 MODEL_COUNT=$(get_model_count)
 echo "[vLLM] Found ${MODEL_COUNT} models to serve"
 echo ""
@@ -219,10 +203,7 @@ for (( i=0; i<MODEL_COUNT; i++ )); do
     success=0
 
     while (( retry_count < MAX_RETRIES )); do
-        # Start the server
         start_server "${i}"
-
-        # Wait for health — blocks until healthy, crashed, or timeout
         wait_for_health "${server_name}" "${port}"
         health_status=$?
 
@@ -230,13 +211,11 @@ for (( i=0; i<MODEL_COUNT; i++ )); do
             success=1
             break
         elif [[ ${health_status} -eq 2 ]]; then
-            # Crash during init (likely OOM) — retry
             retry_count=$((retry_count + 1))
             if (( retry_count < MAX_RETRIES )); then
                 wait_time=$((retry_count * 5))
                 echo "[vLLM] ${server_name} retry ${retry_count}/${MAX_RETRIES} — waiting ${wait_time}s for GPU memory cleanup..."
 
-                # Kill the crashed process
                 pidfile="${LOG_DIR}/${server_name}.pid"
                 if [[ -f "${pidfile}" ]]; then
                     pid=$(cat "${pidfile}")
@@ -248,7 +227,6 @@ for (( i=0; i<MODEL_COUNT; i++ )); do
                 echo "[vLLM] Retrying ${server_name}..."
             fi
         else
-            # Permanent failure
             echo "[vLLM] ERROR: ${server_name} failed permanently"
             exit 1
         fi
